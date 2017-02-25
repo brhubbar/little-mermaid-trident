@@ -7,4 +7,4 @@ It was created for an [Adafruit Pro Trinket 5V](https://www.adafruit.com/product
 ## Here's the final product:
 <iframe width="560" height="315" src="https://www.youtube.com/embed/uVdDKoUfJbE?rel=0" frameborder="0" allowfullscreen></iframe>
 
-[test](/test)
+View these pages to learn more about the [physical prop](/trident/physical) and the [electronics](/trident/electronics).
