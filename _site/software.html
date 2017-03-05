@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="UTF-8">
+    <title>Trident Software</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#157878">
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="/assets/css/style.css?v=028ef8fa08172da6ac9c44d73cb5d4c5fdd790a0">
+  </head>
+  <body>
+    <section class="page-header">
+      <h1 class="project-name">trident</h1>
+      <!-- <h2 class="project-tagline"></h2> -->
+      
+        <a href="http://github.com/mminkoff/trident" class="btn">View on GitHub</a>
+      
+      
+      <div class="links">
+        <a href="/">Home</a>
+        <a href="physical">Structure</a>
+        <a href="electronics">Electronics</a>
+        <a href="software">Software</a>
+        <a href="finish">Finish</a>
+      </div>
+    </section>
+
+    <section class="main-content">
+      <h2 id="software">Software</h2>
+
+<p>I hope that the program is pretty self-explanatory once you read through it (perhaps a few times).  I’m going to try to give you a broad overview here, but the details, of course, are in the code itself.</p>
+
+<h3 id="color">Color</h3>
+
+<p>I used HSV for color definitions rather than RGB.  You can find more than you want to know about it on <a href="https://en.wikipedia.org/wiki/HSL_and_HSV">Wikipedia</a>.  The bottom line is that with HSV you can simply set a hue (H) and saturation (S) and then easily adjust the brightness value (V).  Trying to do so with RGB can be very confusing, if not for some very helpful libraries, but still, HSV for the win.  Using the FastLED library, you keep two arrays - an HSV array with the colors you want and then an RGB array that FastLED communicates with the physical LEDs when you tell it to with <code class="highlighter-rouge">FastLED.show()</code>.  You convert the entire HSV array into the RGB array with <code class="highlighter-rouge">hsv2rgb_rainbow()</code>.  It’s all quite civilized.</p>
+
+<p>The general idea is that you light up a particular LED (or several of them) and then decay their brightness over time.  So there’s a less frequent frame rate at which you might have the LEDs “chase” (appear to light up in a row) - that’s where you light up the “next” LED by setting a high brightness - and a faster frame rate at which you reduce the brightness of all LEDs by a little bit each time.  It’s pretty simple but it looks great.</p>
+
+<p>Here’s what it looks like with the LEDs still in a strip.  Remember that each set of four LEDs is a ring so you’ll see each set of four “chasing”.</p>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/SuLaVNUgtOI?rel=0" frameborder="0" allowfullscreen=""></iframe>
+
+<h3 id="sparkling-tines">“Sparkling” tines</h3>
+
+<p>Other than when in an “attack”, the tines are meant to “sparkle.”  That happens by randomly lighting up various LEDs on the tines.  The brightness decays in the same way as the shaft LEDs.</p>
+
+<h3 id="pressure-sensors">Pressure Sensors</h3>
+
+<p>If we reacted to the current reading of the sensors we’d get pretty erratic behavior as the readings can shift pretty quickly.  Instead we keep an array of the most recent readings and use the ongoing average.  One side effect is that it take a second or so for the trident to light up (if you’re ambitious you can adjust the software so that it will react more quickly).  Otherwise, this makes it react much more smoothly.</p>
+
+<h3 id="adjustpower">adjustPower()</h3>
+
+<p>Every time through the loop we adjust a variety of settings based on the average pressure reading.  The speed of the chasing, the brightness of the LEDs, the likelihood of a tine LED lighting up, the speed of the brightness decay, etc.  All of this is easily adjustable.</p>
+
+<h3 id="mapping-and-easing">Mapping and Easing</h3>
+
+<p>We “map” an input range from the sensors to a desired output range.  The software does this mapping smoothly.  We also ease the numbers in and out so that there is, essentially, more range at the bottom and top of the sensor readings and less in the middle.  In other words, even if there’s a bit of a jump between off and on it should ramp up a bit more slowly, and similarly it tapers off as we get to the top of the reading so that even if we’re pretty close to the top of the sensor range we can still see noticeable changes in the output.  This doesn’t sound very articulate to me at the moment but hopefully you understand.  <a href="http://easings.net">Here</a> is a bit more about it, though in a somewhat different context.</p>
+
+
+      <footer class="site-footer">
+        
+          <span class="site-footer-owner"><a href="http://github.com/mminkoff/trident">trident</a> is maintained by <a href="http://github.com/mminkoff">mminkoff</a>.</span>
+        
+        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a>.</span>
+      </footer>
+    </section>
+
+    
+  </body>
+</html>

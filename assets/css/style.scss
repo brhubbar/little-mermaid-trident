@@ -1,0 +1,74 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+@mixin large {
+  @media screen and (min-width: #{$large-breakpoint}) {
+    @content;
+  }
+}
+
+@mixin medium {
+  @media screen and (min-width: #{$medium-breakpoint}) and (max-width: #{$large-breakpoint}) {
+    @content;
+  }
+}
+
+@mixin small {
+  @media screen and (max-width: #{$medium-breakpoint}) {
+    @content;
+  }
+}
+
+img.plain-trident {
+  float: left;
+}
+
+img.parts {
+  float: right;
+  margin: 1em 0 1em 1em;
+  max-width: 247px;
+  width: 40vw;
+}
+
+.main-content h2 {
+  margin-top: 1em;
+}
+
+h2.new-section {
+  clear: both;
+}
+
+.page-header {
+  @include large {
+    padding: 3rem 6rem;
+  }
+}
+
+.links {
+  margin-top: 1em;
+
+  a {
+    color: white;
+    padding: 0.5em;
+    background-color: rgba(50,50,50,0.3);
+    border-radius: 0.25em;
+    display: inline-block;
+    margin: 0.2em 0.1em;
+  }
+}
+
+.image-holder {
+  p {
+    margin: 0;
+    font-size: 0.9em;
+    color: black;
+  }
+}
+
+.ps, .ps-components {
+  float: right;
+  width: 290px;
+  margin: 0 0 10px 20px;
+}
