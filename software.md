@@ -4,7 +4,7 @@ title: Trident Software
 
 ## Software
 
-I hope that the program is pretty self-explanatory once you read through it (perhaps a few times).  I'm going to try to give you a broad overview here, but the details, of course, are in the code itself.
+I hope that the program is pretty self-explanatory once you read through it (perhaps a few times).  I'm going to try to give you a broad overview here, but the details, of course, are in the code itself.  [You can find the code here](https://github.com/mminkoff/trident/blob/master/trident.ino).  Since it's in a Github repository you can not only download it but you can also suggest edits via a "pull request".  [You can also post any issues (or suggestions) you have here](https://github.com/mminkoff/trident/issues).
 
 ### Color
 
