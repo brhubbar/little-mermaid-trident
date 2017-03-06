@@ -1,4 +1,6 @@
 theme: jekyll-theme-cayman
+domain: https://mminkoff.github.io
+url: /trident
 title: Trident
 image: https://mminkoff.github.io/trident/assets/site_image.jpg
 description: "Everything and more you'd ever want to know about an LED trident prop I built for our local production of Disney's The Little Mermaid"

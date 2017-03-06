@@ -62,3 +62,7 @@ Note that I also formed Sculpey around the threaded adapter (C) to make a smooth
 ## Finish
 
 The last part is the cap, not shown in the diagram but there's a link provided to the part.  There are still a few holes to drill but I'll cover that on the [electronics](electronics) page.
+
+## Finalizing
+
+Once everything was complete, including the finish, I used small screws, pre-drilled, to hold everything together.  

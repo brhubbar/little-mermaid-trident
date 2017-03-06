@@ -332,4 +332,4 @@ h2.new-section { clear: both; }
 
 .image-holder p { margin: 0; font-size: 0.9em; color: black; }
 
-.ps, .ps-components { float: right; width: 290px; margin: 0 0 10px 20px; }
+.ps, .ps-components, .pre-finish { float: right; width: 290px; margin: 0 0 10px 20px; }

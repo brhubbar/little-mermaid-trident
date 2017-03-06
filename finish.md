@@ -3,6 +3,12 @@ title: Trident Finish
 ---
 
 ### Decorative Elements
+<div class="image-holder pre-finish">
+  <a href="assets/pre_foam.jpg">
+    <img src="assets/pre_foam.jpg">
+  </a>
+  <p>Pre-finish.  I wish I had taken more pictures to show you.</p>
+</div>
 
 My general intention was to imply that the trident was made from natural elements without fine craftsmanship.  These are the things I used:
 
