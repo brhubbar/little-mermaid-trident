@@ -2,7 +2,7 @@
 title: Trident Finish
 ---
 
-### Decorative Elements
+# Decorative Elements
 <div class="image-holder pre-finish">
   <a href="assets/pre_foam.jpg">
     <img src="assets/pre_foam.jpg">
