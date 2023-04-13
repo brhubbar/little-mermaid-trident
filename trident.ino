@@ -1,9 +1,11 @@
 #include <Arduino.h>
 
+// https://github.com/FastLED/FastLED/wiki/Overview
 #include <FastLED.h>
 
-#define DATAPIN    10
-#define CLOCKPIN   12
+// Defined for Arduino Micro
+#define DATAPIN    16  // COPI/PICO
+#define CLOCKPIN   15  // SCK
 
 #define ATTACK_BUTTON_PIN 5
 #define MAGIC_BUTTON_PIN 4
@@ -12,8 +14,8 @@
 #define VELO_PIN_2 A4  // secondary pressure
 #define VELO_PIN_3 A3  // tertiary pressure
 
-#define COLOR_ORDER BGR
-#define CHIPSET     DOTSTAR
+#define COLOR_ORDER BGR  // Test this using the Blink.ino example from FastLED
+#define CHIPSET     DOTSTAR  // AKA APA102, come highly recommended: https://github.com/FastLED/FastLED/wiki/Chipset-reference
 #define NUM_SHAFT_LEDS 60
 #define NUM_TINE1_LEDS 10
 #define NUM_TINE2_LEDS 10
@@ -36,6 +38,7 @@
 #define BRIGHTNESS  200
 #define MODE_LED_BRIGHTNESS 20
 
+// Velostat (pressure sensitive analog input) configuration.
 #define VELO_PIN_1_MIN 38
 #define VELO_PIN_1_MAX 45
 #define VELO_PIN_2_MIN 40
@@ -48,8 +51,8 @@
 #define FRAMES_PER_SECOND 60
 #define FRAME_LIMIT 240
 
-int veloArray[VELO_ARRAY_SIZE];
-int veloArrayIndex = 0;
+int veloQueue[VELO_ARRAY_SIZE];
+int veloQueueIndex = 0;
 
 const int NUM_LEDS = NUM_SHAFT_LEDS + NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS + 1; // 1 for mode indicator
 const int MODE_LED_LOCATION = NUM_SHAFT_LEDS ;  // location starts at 0
@@ -64,9 +67,9 @@ byte prevAttackButtonState = HIGH;
 byte prevMagicButtonState = HIGH;
 byte prevModeButtonState = HIGH;
 
-int sensorValue1 = 0;        // value read from the pressure pad
-int sensorValue2 = 0;        // value read from the pressure pad
-int sensorValue3 = 0;        // value read from the pressure pad
+int veloValue1 = 0;        // value read from the pressure pad
+int veloValue2 = 0;        // value read from the pressure pad
+int veloValue3 = 0;        // value read from the pressure pad
 
 int framecount = 0;
 
@@ -86,11 +89,11 @@ int attackCounter = 0;
 
 // we'll use this array to maintain, and average, total velo readings
 void initializeVeloArray() {
-  veloArrayIndex = 0;  // index to put latest reading into
+  veloQueueIndex = 0;  // index to put latest reading into
 
   // initialize the array itself
   for( int i = 0; i < VELO_ARRAY_SIZE; i++) {
-    veloArray[i] = 0;
+    veloQueue[i] = 0;
   }
 }
 
@@ -120,6 +123,8 @@ void setup() {
   // initialize LEDs
   FastLED.addLeds<CHIPSET, DATAPIN, CLOCKPIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip );
   FastLED.setBrightness( BRIGHTNESS );
+  FastLED.clear();
+  FastLED.show();
 
   Serial.println("ready");
 }
@@ -135,32 +140,33 @@ void loop() {
   }
 
   // get velo readings
-  sensorValue1 = getVeloReading(VELO_PIN_1, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
-  sensorValue2 = getMappedVeloReading(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
-  sensorValue3 = getMappedVeloReading(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
+  veloValue1 = getVeloValue(VELO_PIN_1, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
+  veloValue2 = getMappedVeloValue(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
+  veloValue3 = getMappedVeloValue(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
 
   // velo1 must be engaged to add other settings
-  if(sensorValue1 > VELO_PIN_1_MIN) {
+  if(veloValue1 > VELO_PIN_1_MIN) {
     // a reading of 2 gets us the minimal activity
-    addVeloReading(2+sensorValue2+sensorValue3);
+    pushVeloValueToQueue(2+veloValue2+veloValue3);
   } else {
-    addVeloReading(0);
+    pushVeloValueToQueue(0);
   }
 
   // adjust settings depending on velo readings
-  adjustPower(averageVeloReading());
+  adjustPower(getAverageVeloValue());
 
   // button management section
   byte currAttackButtonState = digitalRead(ATTACK_BUTTON_PIN);
   byte currMagicButtonState = digitalRead(MAGIC_BUTTON_PIN);
 
   if ((prevAttackButtonState == LOW) && (currAttackButtonState == HIGH)) {
-  }
-  if ((prevMagicButtonState == LOW) && (currMagicButtonState == HIGH)) {
-    magicButtonRelease();
+    // No-Op, we're waiting for a falling edge on the attack button.
   }
   if ((prevAttackButtonState == HIGH) && (currAttackButtonState == LOW)) {
     attackButtonRelease();
+  }
+  if ((prevMagicButtonState == LOW) && (currMagicButtonState == HIGH)) {
+    magicButtonRelease();
   }
   if ((prevMagicButtonState == HIGH) && (currMagicButtonState == LOW)) {
     magicButtonPress();
@@ -190,31 +196,70 @@ void loop() {
   FastLED.delay(1000 / FRAMES_PER_SECOND);
 }
 
-// Read velostat, keeping results within the provided range
-int getVeloReading(int pin, int minReading, int maxReading) {
+
+/**
+ * @brief Read velostat, keeping results within the provided range.
+ *
+ * Biases the analogRead down by 100, which presumably represents the
+ * noise floor of the setup used in the original implementation.
+ *
+ * TODO: This may need to change.
+ *
+ * @param pin Analog pin to read from.
+ * @param minReading Minimum value returned.
+ * @param maxReading Maximum value returned.
+ * @return int Windowed return value.
+ */
+int getVeloValue(int pin, int minReading, int maxReading) {
+  // analogRead returns [0,1023]
+  // 100-analogRead == [-100,923]
+  // max([-100,923], 38) returns [38,923]
+  // min([38,923], 45) returns [38,45]
   return min(max(100-analogRead(pin),minReading),maxReading);
 }
 
-// this one maps the actual reading to the provided range
-int getMappedVeloReading(int pin, int minReading, int maxReading, int minValue, int maxValue) {
-  int reading = getVeloReading(pin, minReading, maxReading);
+/**
+ * @brief Read velostat, mapping the actual reading to the provided range.
+ *
+ * @param pin Analog pin to read from.
+ * @param minReading Minimum value expected from getVeloValue.
+ * @param maxReading Maximum value expected from getVeloValue.
+ * @param minValue Minimum value returned.
+ * @param maxValue Maximum value returned.
+ * @return int Windowed return value.
+ */
+int getMappedVeloValue(int pin, int minReading, int maxReading, int minValue, int maxValue) {
+  int reading = getVeloValue(pin, minReading, maxReading);
   return map(reading, minReading, maxReading, minValue, maxValue);
 }
 
-void addVeloReading(int reading) {
-  veloArray[veloArrayIndex] = reading;
-  veloArrayIndex++;
+/**
+ * @brief Put `reading` into a queue for filtering (averaging) readings from the
+ * sensor(s).
+ *
+ * @param reading Value to add to the queue
+ */
+void pushVeloValueToQueue(int reading) {
+  veloQueue[veloQueueIndex] = reading;
+  veloQueueIndex++;
 
-  if(veloArrayIndex >= VELO_ARRAY_SIZE) {
-    veloArrayIndex = 0;
+  if(veloQueueIndex >= VELO_ARRAY_SIZE) {
+    veloQueueIndex = 0;
   }
 }
 
-int averageVeloReading() {
+/**
+ * @brief Return the average of veloQueue.
+ *
+ * Note that this value will be truncated toward zero due to integer division.
+ *
+ * @return int
+ */
+int getAverageVeloValue() {
   int sumVal = 0;
 
   for( int i = 0; i < VELO_ARRAY_SIZE; i++) {
-    sumVal += veloArray[i];
+    sumVal += veloQueue[i];
   }
 
   return sumVal/VELO_ARRAY_SIZE;
@@ -229,6 +274,20 @@ float cubicOut(float t) {
   return 1-cubicIn(1-5);
 }
 
+/**
+ * @brief Map a value to a cubic curve.
+ *
+ * @details
+ *   - Clips `val` between `lowVal` and `highVal`.
+ *   -
+ *
+ * @param val
+ * @param lowVal
+ * @param highVal
+ * @param lowRange
+ * @param highRange
+ * @return int
+ */
 int easeInOutMap(int val, int lowVal, int highVal, int lowRange, int highRange) {
   int inRange = highVal - lowVal;
   int outRange = highRange - lowRange;
@@ -297,7 +356,7 @@ void setHS(int hue, int sat, int pct, int start, int end) {
 int topPressure = 60;   // max velo sum
 int bottomPressure = 0; // min velo sum
 
-int decay = 1;         // amount we'll decay per frame
+int decay = 1;         // Rate at which leds dim each iteration of loop()
 int minBright = 0;     // we won't decay below this
 int topBright = 100;   // we won't go any brighter on shaft
 int topTineBright = 0; // we won't go any brighter on tines
@@ -305,7 +364,12 @@ int tineProb = 0;      // probability of tine lighting
 int tineDecay = 3;     // tine decay rate
 
 
-// adjust values based on current average velo reading
+/**
+ * @brief Adjust values based on current average velo reading.
+ *
+ * @param pressure Average velo reading representing squeeze pressure on the
+ * trident.
+ */
 void adjustPower(int pressure) {
   if(pressure > bottomPressure) {
     decay = map(pressure, bottomPressure, topPressure, 1, 15);
