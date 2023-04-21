@@ -16,10 +16,12 @@
 
 #define COLOR_ORDER BGR  // Test this using the Blink.ino example from FastLED
 #define CHIPSET     DOTSTAR  // AKA APA102, come highly recommended: https://github.com/FastLED/FastLED/wiki/Chipset-reference
-#define NUM_SHAFT_LEDS 60
-#define NUM_TINE1_LEDS 10
-#define NUM_TINE2_LEDS 10
-#define NUM_TINE3_LEDS 10
+// NUM_SHAFT_LEDS / LEDS_PER_RING and NUM_SHAFT_LEDS / RINGS_PER_SET must be
+// whole numbers, i.e. LEDS_PER_RING and NUM_SHAFT_LEDS must be factors of
+// NUM_SHAFT_LEDS.
+#define NUM_SHAFT_LEDS 120
+#define LEDS_PER_RING 4  // Used for computing chase effects. Adjustments required if this number is odd.
+#define RINGS_PER_SET 5  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
 
 #define TRITON_MODE 0
 #define URSULA_MODE 1
@@ -55,7 +57,8 @@ int veloQueue[VELO_ARRAY_SIZE];
 int veloQueueIndex = 0;
 
 const int NUM_LEDS = NUM_SHAFT_LEDS + NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS + 1; // 1 for mode indicator
-const int MODE_LED_LOCATION = NUM_SHAFT_LEDS ;  // location starts at 0
+const int NUM_RING_SETS = NUM_SHAFT_LEDS / LEDS_PER_RING / RINGS_PER_SET;
+const int MODE_LED_LOCATION = NUM_SHAFT_LEDS ;  // location starts at 0, mode led is between shaft and tines.
 const int TINES_START = MODE_LED_LOCATION + 1;
 const int TINES_TOTAL = NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS;
 
@@ -75,7 +78,7 @@ int framecount = 0;
 
 int chaseRate = 0;
 int priorChaseFrame = 0;     // previous frame at which we chased
-int priorRing = 0;           // previous ring we lit (within each ring set)
+int currentRingInSet = 0;    // Within a set of rings, which one is flashing? (For a chase)
 int twinkleRate = 40;        // tine twinkling, bottom 4, top 40
 int priorTwinkleFrame = 0;   // previous frame at which we twinkled
 
@@ -426,51 +429,90 @@ void updateShaftLeds() {
   int newHue = 0;
   int newSat = 0;
 
-  // update if this is a chase frame
-  if(framecount > (priorChaseFrame + FRAMES_PER_SECOND/chaseRate)) {
-    // update the chase ring (of each set)
-    priorRing += 1;
-    if(priorRing > 4) {
-      priorRing = 0;
-    }
-
-    if(magicMode) {
-      switch(magicColorCycle) {
-        case 1:
-          newHue = ARIEL_HUE;
-          newSat = ARIEL_SAT;
-          magicColorCycle = 2;
-          break;
-        case 2:
-          newHue = TAIL_HUE;
-          newSat = TAIL_SAT;
-          magicColorCycle = 3;
-          break;
-        case 3:
-        default:
-          newHue = LEGS_HUE;
-          newSat = LEGS_SAT;
-          magicColorCycle = 1;
-        break;
-      }
-    }
-
-    // each ring has 4 LEDs - update all sets on each side
-    for (int i = 0; i < 4; i++) {
-      hsvs[(priorRing)*4+i].val = topBright;     // first set
-      hsvs[(priorRing+5)*4+i].val = topBright;   // second
-      hsvs[(priorRing+10)*4+i].val = topBright;  // third
-      if(magicMode) {  // we change colors in this mode
-        hsvs[(priorRing)*4+i].hue = newHue;
-        hsvs[(priorRing+5)*4+i].hue = newHue;
-        hsvs[(priorRing+10)*4+i].hue = newHue;
-        hsvs[(priorRing)*4+i].sat = newSat;
-        hsvs[(priorRing+5)*4+i].sat = newSat;
-        hsvs[(priorRing+10)*4+i].sat = newSat;
-      }
-    }
-    priorChaseFrame = framecount;
+  // Stop if a chase 'frame' happened too recently.
+  if(framecount < (priorChaseFrame + FRAMES_PER_SECOND/chaseRate)) {
+    return;
   }
+  // Rings are grouped together into sets of four.
+  currentRingInSet += 1;
+  if(currentRingInSet >= RINGS_PER_SET) {
+    currentRingInSet = 0;
+  }
+
+  // Cycle through ariel / sea / human colors for the magic effect.
+  if(magicMode) {
+    switch(magicColorCycle) {
+      case 1:
+        newHue = ARIEL_HUE;
+        newSat = ARIEL_SAT;
+        magicColorCycle = 2;
+        break;
+      case 2:
+        newHue = TAIL_HUE;
+        newSat = TAIL_SAT;
+        magicColorCycle = 3;
+        break;
+      case 3:
+      default:
+        newHue = LEGS_HUE;
+        newSat = LEGS_SAT;
+        magicColorCycle = 1;
+      break;
+    }
+  }
+
+  // Update each led in the current ring in each set.
+  //
+  // My LEDs are snaking (see end of file for illustrations), so addressing is a
+  // little more mathematically intensive. Each configuration I've considered is
+  // laid out below, with snaking actually implemented. Note that snaking LEDs
+  // assumes that LEDS_PER_RING is an even number.
+  //
+  // LED addresses for ring n in snaking configuration:
+  //     0*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING-1-n
+  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     2*2*NUM_SHAFT_LEDS/LEDS_PER_RING-1-n
+  //     ...
+  // LED addresses for ring n in climbing configuration:
+  //     0*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     2*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     3*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     ...
+  // LED addresses for ring n in wrapping configuration:
+  //     0 + LEDS_PER_RING*n
+  //     1 + LEDS_PER_RING*n
+  //     2 + LEDS_PER_RING*n
+  //     3 + LEDS_PER_RING*n
+  //     ...
+  // n == currentRingInSet + an offset for which set of rings we're updating.
+
+  // Uncomment all of the Serial.prints to get troubleshooting output to review
+  // what happens in a given loop.
+  // Serial.print("\n\nRing");
+  // Serial.println(currentRingInSet);
+  for (int setIdx = 0; setIdx < NUM_RING_SETS; setIdx++) {
+    for (int ledIdx = 0; ledIdx < LEDS_PER_RING/2; ledIdx++) {
+      // We have LEDs snaking up and down, handle pairs each iteration.
+      int ascendingLedAddr = ledIdx*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + (currentRingInSet + setIdx*RINGS_PER_SET);
+      int descendingLedAddr = (ledIdx+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - (currentRingInSet + setIdx*RINGS_PER_SET) - 1;
+      // Serial.print("Asc: ");
+      // Serial.print(ascendingLedAddr);
+      // Serial.print(", Desc: ");
+      // Serial.print(descendingLedAddr);
+      hsvs[ascendingLedAddr].val = topBright;
+      hsvs[descendingLedAddr].val = topBright;
+      if(magicMode) {  // we change colors in this mode
+        hsvs[ascendingLedAddr].hue = newHue;
+        hsvs[descendingLedAddr].hue = newHue;
+        hsvs[ascendingLedAddr].sat = newSat;
+        hsvs[descendingLedAddr].sat = newSat;
+      }
+    }
+    // Serial.println();
+  }
+  priorChaseFrame = framecount;
 }
 
 void updateTineLeds() {
@@ -517,3 +559,51 @@ void updateTineLeds() {
     }
   }
 }
+
+// Snaking LEDs:
+// ....  ....
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  |  |  |
+// |  ....  |
+//
+// climbing LEDs:
+// |. |. |. |
+// |. |. |. |
+// |. |. |. |
+// |. |. |. |
+// |. |. |. |
+// |. |. |. |
+// |. |. |. |
+// | .| .| .|
+// | .| .| .|
+// | .| .| .|
+// | .| .| .|
+// | .| .| .|
+// | .| .| .|
+// | .| .| .|
+//
+// Wrapping LEDs:
+// __________
+// .....
+//      .....
+// __________
+// .....
+//      .....
+// __________
+// .....
+//      .....
+// __________
+// .....
+//      .....
+// __________
+//
