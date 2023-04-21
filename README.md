@@ -1,16 +1,34 @@
 # trident
 
-This is the code I used for an LED trident prop I built for our local production
-of Disney's The Little Mermaid.
+This repo hosts the code and documentation for an LED trident prop intended for
+use in productions of Disney's The Little Mermaid.
 
-It was created for an [Adafruit Pro Trinket
-5V](https://www.adafruit.com/products/2000) using [DotStar
-LEDs](https://www.adafruit.com/categories/885), several
-[buttons](https://www.adafruit.com/categories/235), and pressure sensors made
-with [Velostat conductive material](https://www.adafruit.com/products/1361).
+## Hardware
+
+It was originally built for use with the now deprecated [Adafruit Pro Trinket
+5V](https://www.adafruit.com/products/2000), and has since been updated for use
+on an [Arduino Micro](https://store.arduino.cc/products/arduino-micro). In
+truth, any microcontroller supported by Arduino will work just fine, but you may
+need to [adjust some pinouts to optimize performance of the
+LEDs](https://github.com/FastLED/FastLED/wiki/Wiring-leds).
+
+The LEDs of choise are [DotStar LEDs](https://www.adafruit.com/categories/885),
+otherwise known as [APA102
+LEDs](https://github.com/FastLED/FastLED/wiki/Chipset-reference). These are
+super fast, affordable, and reliable.
+
+There are several [buttons](https://www.adafruit.com/categories/235) used for
+mode control and pressure sensors made with [Velostat conductive
+material](https://www.adafruit.com/products/1361) used for intensity control.
 
 You can find out much more about it at
 [http://mminkoff.github.io/trident](http://mminkoff.github.io/trident).
+
+## Software
+
+The only dependency not included with Arduino by default is
+[FastLED](https://github.com/FastLED/FastLED), which can be installed using the
+Arduino Package Manager.
 
 ## Editing
 
