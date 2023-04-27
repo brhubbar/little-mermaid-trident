@@ -19,9 +19,12 @@
 // NUM_SHAFT_LEDS / LEDS_PER_RING and NUM_SHAFT_LEDS / RINGS_PER_SET must be
 // whole numbers, i.e. LEDS_PER_RING and NUM_SHAFT_LEDS must be factors of
 // NUM_SHAFT_LEDS.
-#define NUM_SHAFT_LEDS 120
-#define LEDS_PER_RING 4  // Used for computing chase effects. Adjustments required if this number is odd.
-#define RINGS_PER_SET 5  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
+#define NUM_SHAFT_LEDS 150
+#define LEDS_PER_RING 5  // Used for computing chase effects. It's fine if this number is odd.
+#define RINGS_PER_SET 10  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
+#define NUM_TINE1_LEDS 19  // 10
+#define NUM_TINE2_LEDS 19  // 10
+#define NUM_TINE3_LEDS 19  // 10
 
 #define TRITON_MODE 0
 #define URSULA_MODE 1
@@ -493,21 +496,27 @@ void updateShaftLeds() {
   // Serial.print("\n\nRing");
   // Serial.println(currentRingInSet);
   for (int setIdx = 0; setIdx < NUM_RING_SETS; setIdx++) {
-    for (int ledIdx = 0; ledIdx < LEDS_PER_RING/2; ledIdx++) {
-      // We have LEDs snaking up and down, handle pairs each iteration.
-      int ascendingLedAddr = ledIdx*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + (currentRingInSet + setIdx*RINGS_PER_SET);
-      int descendingLedAddr = (ledIdx+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - (currentRingInSet + setIdx*RINGS_PER_SET) - 1;
+    for (int ledIdx = 0; ledIdx < LEDS_PER_RING; ledIdx++) {
+      // We have LEDs snaking up and down, swap between the two with each
+      // iteration using modulo. ledIdxDiv2 accounts for the numbering pattern
+      // noted in the long comment above for snaking configuration.
+      int ledIdxDiv2 = ceil(ledIdx / 2);
+      int ledAddr = 0;
+      if (ledIdx % 2 == 0) {
+        // Even, ascending
+        ledAddr = (ledIdxDiv2)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + (currentRingInSet + setIdx*RINGS_PER_SET);
+      } else {
+        // Odd, descending
+        ledAddr = (ledIdxDiv2+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - (currentRingInSet + setIdx*RINGS_PER_SET) - 1;
+      }
       // Serial.print("Asc: ");
       // Serial.print(ascendingLedAddr);
       // Serial.print(", Desc: ");
       // Serial.print(descendingLedAddr);
-      hsvs[ascendingLedAddr].val = topBright;
-      hsvs[descendingLedAddr].val = topBright;
+      hsvs[ledAddr].val = topBright;
       if(magicMode) {  // we change colors in this mode
-        hsvs[ascendingLedAddr].hue = newHue;
-        hsvs[descendingLedAddr].hue = newHue;
-        hsvs[ascendingLedAddr].sat = newSat;
-        hsvs[descendingLedAddr].sat = newSat;
+        hsvs[ledAddr].hue = newHue;
+        hsvs[ledAddr].sat = newSat;
       }
     }
     // Serial.println();
