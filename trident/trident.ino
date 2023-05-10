@@ -13,6 +13,9 @@
 #define VELO_PIN_1 A5  // holding sensor
 #define VELO_PIN_2 A4  // secondary pressure
 #define VELO_PIN_3 A3  // tertiary pressure
+#define GREENWIRE A5  // holding sensor
+#define BLUEWIRE A4  // secondary pressure
+#define REDWIRE A3  // tertiary pressure
 
 #define COLOR_ORDER BGR  // Test this using the Blink.ino example from FastLED
 #define CHIPSET     DOTSTAR  // AKA APA102, come highly recommended: https://github.com/FastLED/FastLED/wiki/Chipset-reference
@@ -51,7 +54,7 @@
 #define VELO_PIN_3_MIN 60
 #define VELO_PIN_3_MAX 80
 
-#define VELO_ARRAY_SIZE 120
+#define VELO_ARRAY_SIZE 30
 
 #define FRAMES_PER_SECOND 60
 #define FRAME_LIMIT 240
@@ -112,9 +115,14 @@ void setup() {
   // Serial.println("Serial Connected");
 
   // setup pins
-  pinMode(VELO_PIN_1, INPUT_PULLUP);
-  pinMode(VELO_PIN_2, INPUT_PULLUP);
-  pinMode(VELO_PIN_3, INPUT_PULLUP);
+  pinMode(REDWIRE, OUTPUT);
+  digitalWrite(REDWIRE, LOW);
+  pinMode(GREENWIRE, OUTPUT);
+  digitalWrite(GREENWIRE, HIGH);
+  pinMode(BLUEWIRE, INPUT_PULLUP);
+  // pinMode(VELO_PIN_1, INPUT_PULLUP);
+  // pinMode(VELO_PIN_2, INPUT_PULLUP);
+  // pinMode(VELO_PIN_3, INPUT_PULLUP);
   initializeVeloArray();
 
   pinMode(ATTACK_BUTTON_PIN, INPUT_PULLUP);
@@ -149,7 +157,7 @@ void loop() {
   }
 
   // get velo readings
-  veloValue1 = 60; // getVeloValue(VELO_PIN_3, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
+  veloValue1 = getVeloValue(BLUEWIRE, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
   veloValue2 = 0; // getMappedVeloValue(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
   veloValue3 = 0; // getMappedVeloValue(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
 
