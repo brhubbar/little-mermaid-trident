@@ -24,7 +24,7 @@
 // NUM_SHAFT_LEDS.
 #define NUM_SHAFT_LEDS 150
 #define LEDS_PER_RING 5  // Used for computing chase effects. It's fine if this number is odd.
-#define RINGS_PER_SET 10  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
+#define RINGS_PER_SET 6  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
 #define NUM_TINE1_LEDS 19  // 10
 #define NUM_TINE2_LEDS 19  // 10
 #define NUM_TINE3_LEDS 19  // 10
@@ -442,28 +442,10 @@ void endMagic() {
   }
 }
 
-// Double math happenin' here.
-double LEDS_PER_COLUMN = NUM_SHAFT_LEDS / LEDS_PER_RING;
-
 void updateShaftLeds() {
-  // 0 if true, 1 if false.
-  int turn_off_odds = 0;
   // decay all leds
   for( int i = 0; i < NUM_SHAFT_LEDS; i++) {
-    int column_idx = floor(i / LEDS_PER_COLUMN);
-    if (column_idx % 2 == 0) {
-      // Even column, turn off evens.
-      turn_off_odds = 0;
-    } else {
-      // Odd column, turn off odds.
-      turn_off_odds = 1;
-    }
-    if (i % 2 == turn_off_odds) {
-      // Disable every other LED for battery saving porpoises.
-      hsvs[i].val = max(hsvs[i].val - decay, minBright);
-      continue;
-    }
-    hsvs[i].val = 0;
+    hsvs[i].val = max(hsvs[i].val - decay, minBright);
   }
 
   int newHue = 0;
@@ -473,8 +455,8 @@ void updateShaftLeds() {
   if(framecount < (priorChaseFrame + FRAMES_PER_SECOND/chaseRate)) {
     return;
   }
-  // Rings are grouped together into sets of RINGS_PER_SET.
-  currentRingInSet += 2;
+  // Rings are grouped together into sets of four.
+  currentRingInSet += 1;
   if(currentRingInSet >= RINGS_PER_SET) {
     currentRingInSet = 0;
   }
