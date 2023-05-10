@@ -21,7 +21,7 @@
 // NUM_SHAFT_LEDS.
 #define NUM_SHAFT_LEDS 150
 #define LEDS_PER_RING 5  // Used for computing chase effects. It's fine if this number is odd.
-#define RINGS_PER_SET 10  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
+#define RINGS_PER_SET 6  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
 #define NUM_TINE1_LEDS 19  // 10
 #define NUM_TINE2_LEDS 19  // 10
 #define NUM_TINE3_LEDS 19  // 10
@@ -105,11 +105,11 @@ void initializeVeloArray() {
 
 void setup() {
   delay( 2000 );              // power-up safety delay
-  Serial.begin(57600);
-  while (!Serial) {
+  // Serial.begin(57600);
+  // while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
-  }
-  Serial.println("Serial Connected");
+  // }
+  // Serial.println("Serial Connected");
 
   // setup pins
   pinMode(VELO_PIN_1, INPUT_PULLUP);
@@ -132,7 +132,10 @@ void setup() {
   FastLED.clear();
   FastLED.show();
 
-  Serial.println("ready");
+  // ursulaMode();
+  // startMagic();
+
+  // Serial.println("ready");
 }
 
 void loop() {
@@ -146,17 +149,18 @@ void loop() {
   }
 
   // get velo readings
-  veloValue1 = getVeloValue(VELO_PIN_1, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
-  veloValue2 = getMappedVeloValue(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
-  veloValue3 = getMappedVeloValue(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
+  veloValue1 = 60; // getVeloValue(VELO_PIN_3, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
+  veloValue2 = 0; // getMappedVeloValue(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
+  veloValue3 = 0; // getMappedVeloValue(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
 
+  pushVeloValueToQueue(veloValue1);
   // velo1 must be engaged to add other settings
-  if(veloValue1 > VELO_PIN_1_MIN) {
-    // a reading of 2 gets us the minimal activity
-    pushVeloValueToQueue(2+veloValue2+veloValue3);
-  } else {
-    pushVeloValueToQueue(0);
-  }
+  // if(veloValue1 > VELO_PIN_1_MIN) {
+  //   // a reading of 2 gets us the minimal activity
+  //   pushVeloValueToQueue(2+veloValue2+veloValue3);
+  // } else {
+  //   pushVeloValueToQueue(0);
+  // }
 
   // adjust settings depending on velo readings
   adjustPower(getAverageVeloValue());
@@ -221,7 +225,10 @@ int getVeloValue(int pin, int minReading, int maxReading) {
   // 100-analogRead == [-100,923]
   // max([-100,923], 38) returns [38,923]
   // min([38,923], 45) returns [38,45]
-  return min(max(100-analogRead(pin),minReading),maxReading);
+  // return min(max(100-analogRead(pin),minReading),maxReading);
+  int ret = map(analogRead(pin),0, 1023, 0 ,62);
+  // Serial.println(ret);
+  return ret;
 }
 
 /**
@@ -297,8 +304,12 @@ float cubicOut(float t) {
 int easeInOutMap(int val, int lowVal, int highVal, int lowRange, int highRange) {
   int inRange = highVal - lowVal;
   int outRange = highRange - lowRange;
+
+  // Clip the input value.
   val = max(val,lowVal);
   val = min(val,highVal);
+
+  //
   float t = (val-lowVal)/(inRange * 1.0);
   float r;
   if(t < 0.5) {
@@ -313,39 +324,39 @@ int easeInOutMap(int val, int lowVal, int highVal, int lowRange, int highRange) 
 
 // called when key goes from pressed to not pressed
 void attackButtonRelease() {
-  Serial.println("attack button released");
+  // Serial.println("attack button released");
   startAttack();
 }
 
 void magicButtonPress() {
-  Serial.println("magic button pressed");
+  // Serial.println("magic button pressed");
   startMagic();
 }
 void magicButtonRelease() {
-  Serial.println("magic button released");
+  // Serial.println("magic button released");
   endMagic();
 }
 
 void tritonMode() {
-  Serial.println("triton");
+  // Serial.println("triton");
   currentMode = TRITON_MODE;
 
   // set all shaft leds with triton color
   setHS(TRITONHUE, TRITONSAT, 100, 0, NUM_SHAFT_LEDS);
 
   // set mode indicator led
-  hsvs[MODE_LED_LOCATION] = CHSV(TRITONHUE, TRITONSAT,MODE_LED_BRIGHTNESS);
+  hsvs[MODE_LED_LOCATION] = CHSV(TRITONHUE, TRITONSAT, MODE_LED_BRIGHTNESS);
 }
 
 void ursulaMode() {
-  Serial.println("ursula");
+  // Serial.println("ursula");
   currentMode = URSULA_MODE;
 
   // set most shaft leds with ursula color, with a chance of just desaturating what's already there (triton hue)
   setHS(URSULAHUE, URSULASAT, 70, 0, NUM_SHAFT_LEDS);
 
   // set mode indicator led
-  hsvs[MODE_LED_LOCATION] = CHSV(URSULAHUE, URSULASAT,MODE_LED_BRIGHTNESS);
+  hsvs[MODE_LED_LOCATION] = CHSV(URSULAHUE, URSULASAT, MODE_LED_BRIGHTNESS);
 }
 
 void setHS(int hue, int sat, int pct, int start, int end) {
