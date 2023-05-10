@@ -25,9 +25,9 @@
 #define NUM_SHAFT_LEDS 150
 #define LEDS_PER_RING 5  // Used for computing chase effects. It's fine if this number is odd.
 #define RINGS_PER_SET 6  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
-#define NUM_TINE1_LEDS 19  // 10
-#define NUM_TINE2_LEDS 19  // 10
-#define NUM_TINE3_LEDS 19  // 10
+#define NUM_TINE1_LEDS 33  // 10
+#define NUM_TINE2_LEDS 13  // 10
+#define NUM_TINE3_LEDS 13  // 10
 
 #define TRITON_MODE 0
 #define URSULA_MODE 1
@@ -445,7 +445,7 @@ void endMagic() {
 void updateShaftLeds() {
   // decay all leds
   for( int i = 0; i < NUM_SHAFT_LEDS; i++) {
-    hsvs[i].val = max(hsvs[i].val - decay, minBright);
+    hsvs[i].val = max(hsvs[i].val - decay, 0);
   }
 
   int newHue = 0;
