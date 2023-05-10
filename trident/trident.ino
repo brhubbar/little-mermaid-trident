@@ -110,7 +110,7 @@ void setup() {
   delay( 2000 );              // power-up safety delay
   // Serial.begin(57600);
   // while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+  //   ; // wait for serial port to connect. Needed for native USB port only
   // }
   // Serial.println("Serial Connected");
 
@@ -156,19 +156,15 @@ void loop() {
     priorTwinkleFrame -= FRAME_LIMIT;
   }
 
-  // get velo readings
-  veloValue1 = getVeloValue(BLUEWIRE, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
+  // Fader returns 18 at minimum, 1020 at max.
+  veloValue1 = getMappedVeloValue(BLUEWIRE, 18, 1020, 0, 60);
+  // Serial.println(veloValue1);
+  // return;
+
   veloValue2 = 0; // getMappedVeloValue(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
   veloValue3 = 0; // getMappedVeloValue(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
 
   pushVeloValueToQueue(veloValue1);
-  // velo1 must be engaged to add other settings
-  // if(veloValue1 > VELO_PIN_1_MIN) {
-  //   // a reading of 2 gets us the minimal activity
-  //   pushVeloValueToQueue(2+veloValue2+veloValue3);
-  // } else {
-  //   pushVeloValueToQueue(0);
-  // }
 
   // adjust settings depending on velo readings
   adjustPower(getAverageVeloValue());
@@ -234,7 +230,7 @@ int getVeloValue(int pin, int minReading, int maxReading) {
   // max([-100,923], 38) returns [38,923]
   // min([38,923], 45) returns [38,45]
   // return min(max(100-analogRead(pin),minReading),maxReading);
-  int ret = map(analogRead(pin),0, 1023, 0 ,62);
+  int ret = analogRead(pin);
   // Serial.println(ret);
   return ret;
 }
@@ -398,13 +394,13 @@ int tineDecay = 3;     // tine decay rate
 void adjustPower(int pressure) {
   if(pressure > bottomPressure) {
     decay = map(pressure, bottomPressure, topPressure, 1, 15);
-    minBright = easeInOutMap(pressure, bottomPressure, topPressure, 25, 80);
-    topBright = easeInOutMap(pressure, bottomPressure, topPressure, 40, 255);
-    chaseRate = easeInOutMap(pressure, bottomPressure, topPressure, 5, 20);
-    topTineBright = easeInOutMap(pressure, bottomPressure, topPressure, 20, 150);
-    twinkleRate = easeInOutMap(pressure, bottomPressure, topPressure, 0, 40);
-    tineProb = easeInOutMap(pressure, bottomPressure, topPressure, 30, 200);
-    tineDecay = easeInOutMap(pressure, bottomPressure, topPressure, 0, 3);
+    minBright = map(pressure, bottomPressure, topPressure, 25, 80);
+    topBright = map(pressure, bottomPressure, topPressure, 40, 255);
+    chaseRate = map(pressure, bottomPressure, topPressure, 5, 20);
+    topTineBright = map(pressure, bottomPressure, topPressure, 20, 150);
+    twinkleRate = map(pressure, bottomPressure, topPressure, 0, 40);
+    tineProb = map(pressure, bottomPressure, topPressure, 30, 200);
+    tineDecay = map(pressure, bottomPressure, topPressure, 0, 3);
   } else {
     decay = 10;
     minBright = 0;
