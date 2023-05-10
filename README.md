@@ -38,3 +38,19 @@ extension to fully integrate the Arduino build experience. To use it:
 
 - Install the [Arduino Extension](https://github.com/microsoft/vscode-arduino)
 - [Configure Intellisense](https://stackoverflow.com/a/54510703)
+- Install the Draw.io unofficial extension
+
+## Power Consumption
+
+Full power
+
+- Triton Mode: 1.0 A
+- Ursula Mode: 1.1 A
+- Plus Attack: 1.4 A (this is absolute peak power draw with 150 RGB LEDs and 60
+  White LEDs attached)
+- Magic Mode: 0.6 A
+
+Resting: 0.3 A
+
+Battery is 500 mAh @ 3.7 V --> 370 mAh @ 5 V, so 1 hour on with no lights, 22
+minutes in Triton mode at full power
