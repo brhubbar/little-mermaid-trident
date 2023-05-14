@@ -10,12 +10,16 @@
 #define ATTACK_BUTTON_PIN 5
 #define MAGIC_BUTTON_PIN 4
 #define MODE_PIN 6
-#define VELO_PIN_1 A5  // holding sensor
-#define VELO_PIN_2 A4  // secondary pressure
-#define VELO_PIN_3 A3  // tertiary pressure
+
+#define INTENSITY_CTRL_PIN A4  // Linear potentiometer (fader) for smooth, clean control of intensity.
+#define INTENSITY_CTRL_5V A5  // One end of the potentiometer needs 5V. This can be provided by a digital pin if desired.
+#define INTENSITY_CTRL_0V A3  // The other end needs GND/OV. Using digital pins allows for flipping polarity.
+#define INTENSITY_CTRL_MIN_OUTPUT 18  // The minimum value returned by analogRead(INTENSITY_CTRL_PIN) (i.e. when fader is all the way down).
+#define INTENSITY_CTRL_MAX_OUTPUT 1023  // The maximum value returned by analogRead(INTENSITY_CTRL_PIN).
 
 #define COLOR_ORDER BGR  // Test this using the Blink.ino example from FastLED
 #define CHIPSET     DOTSTAR  // AKA APA102, come highly recommended: https://github.com/FastLED/FastLED/wiki/Chipset-reference
+
 // NUM_SHAFT_LEDS / LEDS_PER_RING and NUM_SHAFT_LEDS / RINGS_PER_SET must be
 // whole numbers, i.e. LEDS_PER_RING and NUM_SHAFT_LEDS must be factors of
 // NUM_SHAFT_LEDS.
@@ -43,21 +47,18 @@
 #define BRIGHTNESS  200
 #define MODE_LED_BRIGHTNESS 20
 
-// Velostat (pressure sensitive analog input) configuration.
-#define VELO_PIN_1_MIN 38
-#define VELO_PIN_1_MAX 45
-#define VELO_PIN_2_MIN 40
-#define VELO_PIN_2_MAX 75
-#define VELO_PIN_3_MIN 60
-#define VELO_PIN_3_MAX 80
-
-#define VELO_ARRAY_SIZE 120
+// FIFO queue size for averaging out fader input to slow responsiveness.
+#define INTENSITY_CTRL_FILTER_LENGTH 30
 
 #define FRAMES_PER_SECOND 60
 #define FRAME_LIMIT 240
 
-int veloQueue[VELO_ARRAY_SIZE];
-int veloQueueIndex = 0;
+// The 'intensity' helps indicate the mood in the room. Angry triton has a more
+// intense trident (faster, more common, brighter twinkling).
+int intensityCtrlFilter[INTENSITY_CTRL_FILTER_LENGTH];
+// By modifying the part of the array that we touch each cycle, the queue is
+// FIFO without having to actually move any data in memory.
+int intensityCtrlFilterIndex = 0;
 
 const int NUM_LEDS = NUM_SHAFT_LEDS + NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS + 1; // 1 for mode indicator
 const int NUM_RING_SETS = NUM_SHAFT_LEDS / LEDS_PER_RING / RINGS_PER_SET;
@@ -72,10 +73,6 @@ CRGB leds[NUM_LEDS];
 byte prevAttackButtonState = HIGH;
 byte prevMagicButtonState = HIGH;
 byte prevModeButtonState = HIGH;
-
-int veloValue1 = 0;        // value read from the pressure pad
-int veloValue2 = 0;        // value read from the pressure pad
-int veloValue3 = 0;        // value read from the pressure pad
 
 int framecount = 0;
 
@@ -93,42 +90,40 @@ int magicColorCycle = 1;
 int attackMode = 0;
 int attackCounter = 0;
 
-// we'll use this array to maintain, and average, total velo readings
-void initializeVeloArray() {
-  veloQueueIndex = 0;  // index to put latest reading into
+/**
+ * @brief Fill the filter with zero values as a starting point.
+ */
+void initializeIntensityCtrlFilter() {
+  intensityCtrlFilterIndex = 0;  // index to put latest reading into
 
   // initialize the array itself
-  for( int i = 0; i < VELO_ARRAY_SIZE; i++) {
-    veloQueue[i] = 0;
+  for(int i = 0; i < INTENSITY_CTRL_FILTER_LENGTH; i++) {
+    intensityCtrlFilter[i] = 0;
   }
 }
 
 void setup() {
-  delay( 2000 );              // power-up safety delay
+  delay( 2000 );  // power-up safety delay
   Serial.begin(57600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-  Serial.println("Serial Connected");
 
   // setup pins
-  pinMode(VELO_PIN_1, INPUT_PULLUP);
-  pinMode(VELO_PIN_2, INPUT_PULLUP);
-  pinMode(VELO_PIN_3, INPUT_PULLUP);
-  initializeVeloArray();
+  pinMode(INTENSITY_CTRL_PIN, INPUT_PULLUP);
+  pinMode(INTENSITY_CTRL_5V, OUTPUT); digitalWrite(INTENSITY_CTRL_5V, HIGH);
+  pinMode(INTENSITY_CTRL_0V, OUTPUT); digitalWrite(INTENSITY_CTRL_0V, LOW);
+  initializeIntensityCtrlFilter();
 
   pinMode(ATTACK_BUTTON_PIN, INPUT_PULLUP);
   pinMode(MAGIC_BUTTON_PIN, INPUT_PULLUP);
   pinMode(MODE_PIN, INPUT_PULLUP);
 
-  pinMode(LED_BUILTIN, OUTPUT);
+  // pinMode(LED_BUILTIN, OUTPUT);
 
   // initial mode
   tritonMode();
 
   // initialize LEDs
-  FastLED.addLeds<CHIPSET, DATAPIN, CLOCKPIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip );
-  FastLED.setBrightness( BRIGHTNESS );
+  FastLED.addLeds<CHIPSET, DATAPIN, CLOCKPIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(BRIGHTNESS);
   FastLED.clear();
   FastLED.show();
 
@@ -145,21 +140,8 @@ void loop() {
     priorTwinkleFrame -= FRAME_LIMIT;
   }
 
-  // get velo readings
-  veloValue1 = getVeloValue(VELO_PIN_1, VELO_PIN_1_MIN, VELO_PIN_1_MAX);
-  veloValue2 = getMappedVeloValue(VELO_PIN_2, VELO_PIN_2_MIN, VELO_PIN_2_MAX, 0, 30);
-  veloValue3 = getMappedVeloValue(VELO_PIN_3, VELO_PIN_2_MIN, VELO_PIN_3_MAX, 0, 30);
-
-  // velo1 must be engaged to add other settings
-  if(veloValue1 > VELO_PIN_1_MIN) {
-    // a reading of 2 gets us the minimal activity
-    pushVeloValueToQueue(2+veloValue2+veloValue3);
-  } else {
-    pushVeloValueToQueue(0);
-  }
-
-  // adjust settings depending on velo readings
-  adjustPower(getAverageVeloValue());
+  pushIntensityCtrlValueToFilter(analogRead(INTENSITY_CTRL_PIN));
+  adjustPower(getAverageIntensityCtrlValue());
 
   // button management section
   byte currAttackButtonState = digitalRead(ATTACK_BUTTON_PIN);
@@ -202,73 +184,36 @@ void loop() {
   FastLED.delay(1000 / FRAMES_PER_SECOND);
 }
 
-
-/**
- * @brief Read velostat, keeping results within the provided range.
- *
- * Biases the analogRead down by 100, which presumably represents the
- * noise floor of the setup used in the original implementation.
- *
- * TODO: This may need to change.
- *
- * @param pin Analog pin to read from.
- * @param minReading Minimum value returned.
- * @param maxReading Maximum value returned.
- * @return int Windowed return value.
- */
-int getVeloValue(int pin, int minReading, int maxReading) {
-  // analogRead returns [0,1023]
-  // 100-analogRead == [-100,923]
-  // max([-100,923], 38) returns [38,923]
-  // min([38,923], 45) returns [38,45]
-  return min(max(100-analogRead(pin),minReading),maxReading);
-}
-
-/**
- * @brief Read velostat, mapping the actual reading to the provided range.
- *
- * @param pin Analog pin to read from.
- * @param minReading Minimum value expected from getVeloValue.
- * @param maxReading Maximum value expected from getVeloValue.
- * @param minValue Minimum value returned.
- * @param maxValue Maximum value returned.
- * @return int Windowed return value.
- */
-int getMappedVeloValue(int pin, int minReading, int maxReading, int minValue, int maxValue) {
-  int reading = getVeloValue(pin, minReading, maxReading);
-  return map(reading, minReading, maxReading, minValue, maxValue);
-}
-
 /**
  * @brief Put `reading` into a queue for filtering (averaging) readings from the
  * sensor(s).
  *
  * @param reading Value to add to the queue
  */
-void pushVeloValueToQueue(int reading) {
-  veloQueue[veloQueueIndex] = reading;
-  veloQueueIndex++;
+void pushIntensityCtrlValueToFilter(int reading) {
+  intensityCtrlFilter[intensityCtrlFilterIndex] = reading;
+  intensityCtrlFilterIndex++;
 
-  if(veloQueueIndex >= VELO_ARRAY_SIZE) {
-    veloQueueIndex = 0;
+  if(intensityCtrlFilterIndex >= INTENSITY_CTRL_FILTER_LENGTH) {
+    intensityCtrlFilterIndex = 0;
   }
 }
 
 /**
- * @brief Return the average of veloQueue.
+ * @brief Return the average of intensityCtrlFilter.
  *
  * Note that this value will be truncated toward zero due to integer division.
  *
  * @return int
  */
-int getAverageVeloValue() {
+int getAverageIntensityCtrlValue() {
   int sumVal = 0;
 
-  for( int i = 0; i < VELO_ARRAY_SIZE; i++) {
-    sumVal += veloQueue[i];
+  for( int i = 0; i < INTENSITY_CTRL_FILTER_LENGTH; i++) {
+    sumVal += intensityCtrlFilter[i];
   }
 
-  return sumVal/VELO_ARRAY_SIZE;
+  return sumVal/INTENSITY_CTRL_FILTER_LENGTH;
 }
 
 // Easing functions
@@ -359,8 +304,6 @@ void setHS(int hue, int sat, int pct, int start, int end) {
   }
 }
 
-int topPressure = 60;   // max velo sum
-int bottomPressure = 0; // min velo sum
 
 int decay = 1;         // Rate at which leds dim each iteration of loop()
 int minBright = 0;     // we won't decay below this
@@ -371,21 +314,20 @@ int tineDecay = 3;     // tine decay rate
 
 
 /**
- * @brief Adjust values based on current average velo reading.
+ * @brief Adjust values based on current average fader value.
  *
- * @param pressure Average velo reading representing squeeze pressure on the
- * trident.
+ * @param intensity Setting provided by the fader to set twinkle intensity.
  */
-void adjustPower(int pressure) {
-  if(pressure > bottomPressure) {
-    decay = map(pressure, bottomPressure, topPressure, 1, 15);
-    minBright = easeInOutMap(pressure, bottomPressure, topPressure, 25, 80);
-    topBright = easeInOutMap(pressure, bottomPressure, topPressure, 40, 255);
-    chaseRate = easeInOutMap(pressure, bottomPressure, topPressure, 5, 20);
-    topTineBright = easeInOutMap(pressure, bottomPressure, topPressure, 20, 150);
-    twinkleRate = easeInOutMap(pressure, bottomPressure, topPressure, 0, 40);
-    tineProb = easeInOutMap(pressure, bottomPressure, topPressure, 30, 200);
-    tineDecay = easeInOutMap(pressure, bottomPressure, topPressure, 0, 3);
+void adjustPower(int intensity) {
+  if(intensity > INTENSITY_CTRL_MIN_OUTPUT) {
+    decay = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 1, 15);
+    minBright = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 25, 80);
+    topBright = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 40, 255);
+    chaseRate = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 5, 20);
+    topTineBright = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 20, 150);
+    twinkleRate = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 0, 40);
+    tineProb = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 30, 200);
+    tineDecay = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 0, 3);
   } else {
     decay = 10;
     minBright = 0;
