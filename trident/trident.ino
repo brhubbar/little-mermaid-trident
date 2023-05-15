@@ -9,7 +9,7 @@
 
 #define ATTACK_BUTTON_PIN 5
 #define MAGIC_BUTTON_PIN 4
-#define MODE_PIN 6
+#define MODE_BUTTON_PIN 6
 
 #define INTENSITY_CTRL_PIN A4  // Linear potentiometer (fader) for smooth, clean control of intensity.
 #define INTENSITY_CTRL_5V A5  // One end of the potentiometer needs 5V. This can be provided by a digital pin if desired.
@@ -73,6 +73,9 @@ CRGB leds[NUM_LEDS];
 byte prevAttackButtonState = HIGH;
 byte prevMagicButtonState = HIGH;
 byte prevModeButtonState = HIGH;
+// Got a complaint about this not being defined in scope, so I put a header
+// above. Probably something to do with the function pointers in the arg list.
+bool readButtonAndAct(byte buttonPin, bool previousState, void (*buttonPressCallback)(), void (*buttonReleaseCallback)());
 
 int framecount = 0;
 
@@ -114,7 +117,7 @@ void setup() {
 
   pinMode(ATTACK_BUTTON_PIN, INPUT_PULLUP);
   pinMode(MAGIC_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(MODE_PIN, INPUT_PULLUP);
+  pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
 
   // pinMode(LED_BUILTIN, OUTPUT);
 
@@ -131,6 +134,10 @@ void setup() {
 }
 
 void loop() {
+  prevAttackButtonState = readButtonAndAct(ATTACK_BUTTON_PIN, prevAttackButtonState, &startAttack, &no_op);
+  prevMagicButtonState = readButtonAndAct(MAGIC_BUTTON_PIN, prevMagicButtonState, &startMagic, &endMagic);
+  prevModeButtonState = readButtonAndAct(MODE_BUTTON_PIN, prevModeButtonState, &ursulaMode, &tritonMode);
+
   framecount += 1;
 
   // reset framecount
@@ -142,34 +149,6 @@ void loop() {
 
   pushIntensityCtrlValueToFilter(analogRead(INTENSITY_CTRL_PIN));
   adjustPower(getAverageIntensityCtrlValue());
-
-  // button management section
-  byte currAttackButtonState = digitalRead(ATTACK_BUTTON_PIN);
-  byte currMagicButtonState = digitalRead(MAGIC_BUTTON_PIN);
-
-  if ((prevAttackButtonState == LOW) && (currAttackButtonState == HIGH)) {
-    // No-Op, we're waiting for a falling edge on the attack button.
-  }
-  if ((prevAttackButtonState == HIGH) && (currAttackButtonState == LOW)) {
-    attackButtonRelease();
-  }
-  if ((prevMagicButtonState == LOW) && (currMagicButtonState == HIGH)) {
-    magicButtonRelease();
-  }
-  if ((prevMagicButtonState == HIGH) && (currMagicButtonState == LOW)) {
-    magicButtonPress();
-  }
-  prevAttackButtonState = currAttackButtonState;
-  prevMagicButtonState = currMagicButtonState;
-
-  byte currModeButtonState = digitalRead(MODE_PIN);
-  if ((prevModeButtonState == LOW) && (currModeButtonState == HIGH)) {
-    tritonMode();
-  }
-  if ((prevModeButtonState == HIGH) && (currModeButtonState == LOW)) {
-    ursulaMode();
-  }
-  prevModeButtonState = currModeButtonState;
 
   updateShaftLeds();
   updateTineLeds();
@@ -183,6 +162,39 @@ void loop() {
   // wait until it's time for the next frame
   FastLED.delay(1000 / FRAMES_PER_SECOND);
 }
+
+/**
+ * @brief Read the button state, compare to previous state, then act.
+ *
+ * @param buttonPin The digital pin to read. Assumes the mode is INPUT_PULLUP
+ * @param previousState The last measured state of the button.
+ * @param buttonPressCallback Zero-arg function to call upon a rising edge.
+ * @param buttonReleaseCallback Zero-arg function to call upon a falling edge.
+ * @return current button state, for passing through next time.
+ */
+bool readButtonAndAct(
+  byte buttonPin,
+  bool previousState,
+  void (*buttonPressCallback)(),
+  void (*buttonReleaseCallback)()
+) {
+  byte currentState = digitalRead(buttonPin);
+  // Only checking for rising (press) or falling (release) edges.
+  if (previousState == currentState) return currentState;
+
+  // Falling edge happens when current state is HIGH because of the pullup
+  // resistor applied by INPUT_PULLUP.
+  if (currentState == LOW) {
+    buttonPressCallback();
+  } else {
+    buttonReleaseCallback();
+  }
+
+  return currentState;
+}
+
+/// @brief No-operation for button callbacks.
+void no_op(){;}
 
 /**
  * @brief Put `reading` into a queue for filtering (averaging) readings from the
@@ -252,23 +264,6 @@ int easeInOutMap(int val, int lowVal, int highVal, int lowRange, int highRange) 
     r = 1-cubicIn((1-t)*2)/2;
   }
   return (r * outRange) + lowRange;
-}
-
-//BUTTON CONTROL STUFF
-
-// called when key goes from pressed to not pressed
-void attackButtonRelease() {
-  Serial.println("attack button released");
-  startAttack();
-}
-
-void magicButtonPress() {
-  Serial.println("magic button pressed");
-  startMagic();
-}
-void magicButtonRelease() {
-  Serial.println("magic button released");
-  endMagic();
 }
 
 void tritonMode() {
