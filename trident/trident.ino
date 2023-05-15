@@ -25,10 +25,10 @@
 // NUM_SHAFT_LEDS.
 #define NUM_SHAFT_LEDS 150
 #define LEDS_PER_RING 5  // Used for computing chase effects. It's fine if this number is odd.
-#define RINGS_PER_SET 10  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
-#define NUM_TINE1_LEDS 19  // 10
-#define NUM_TINE2_LEDS 19  // 10
-#define NUM_TINE3_LEDS 19  // 10
+#define RINGS_PER_SET 6  // Used to space out the ring chases (so it's not a single chase up the length of the shaft).
+#define NUM_TINE1_LEDS 33  // 10
+#define NUM_TINE2_LEDS 13  // 10
+#define NUM_TINE3_LEDS 13  // 10
 
 #define TRITON_MODE 0
 #define URSULA_MODE 1
@@ -61,7 +61,8 @@ int intensityCtrlFilter[INTENSITY_CTRL_FILTER_LENGTH];
 int intensityCtrlFilterIndex = 0;
 
 const int NUM_LEDS = NUM_SHAFT_LEDS + NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS + 1; // 1 for mode indicator
-const int NUM_RING_SETS = NUM_SHAFT_LEDS / LEDS_PER_RING / RINGS_PER_SET;
+const int NUM_RINGS = NUM_SHAFT_LEDS / LEDS_PER_RING;
+const int NUM_RING_SETS = NUM_RINGS / RINGS_PER_SET;
 
 const int SHAFT_START_ADDR = 0;
 const int SHAFT_LAST_ADDR = NUM_SHAFT_LEDS - 1;
@@ -157,12 +158,13 @@ void loop() {
   // shaftChase();
   if (magicMode) {
     magicShaftChase();
-    twinkle(TINES_START_ADDR, TINES_LAST_ADDR, 1);
+    twinkle(TINES_START_ADDR, TINES_LAST_ADDR, 0);
   } else if (attackMode) {
-    attack();
+    attackTinesFlash();
+    attackShaftChase();
   } else {
-    twinkle(TINES_START_ADDR, TINES_LAST_ADDR, 1);
-    twinkle(SHAFT_START_ADDR, SHAFT_LAST_ADDR, 1);
+    twinkle(TINES_START_ADDR, TINES_LAST_ADDR, 0);
+    twinkle(SHAFT_START_ADDR, SHAFT_LAST_ADDR, 0);
   }
 
   // convert HSV settings into the leds array
@@ -291,7 +293,6 @@ int topTineBright = 0; // we won't go any brighter on tines
 int tineProb = 0;      // probability of tine lighting
 int tineDecay = 3;     // tine decay rate
 
-
 /**
  * @brief Adjust values based on current average fader value.
  *
@@ -305,7 +306,7 @@ void adjustTwinkleIntensity(int intensity) {
   if(magicMode) {
     chaseRate = 10;
     topBright = 190;
-    decay = 15;
+    decay = 10;
     minBright = 0;
   }
 }
@@ -329,14 +330,11 @@ void endMagic() {
   }
 }
 
-void updateShaftLeds() {
+void magicShaftChase() {
   // decay all leds
   for( int i = 0; i < NUM_SHAFT_LEDS; i++) {
     hsvs[i].val = max(hsvs[i].val - decay, minBright);
   }
-
-  int newHue = 0;
-  int newSat = 0;
 
   // Stop if a chase 'frame' happened too recently.
   if(framecount < (priorChaseFrame + FRAMES_PER_SECOND/chaseRate)) {
@@ -348,26 +346,25 @@ void updateShaftLeds() {
     currentRingInSet = 0;
   }
 
-  // Cycle through ariel / sea / human colors for the magic effect.
-  if(magicMode) {
-    switch(magicColorCycle) {
-      case 1:
-        newHue = ARIEL_HUE;
-        newSat = ARIEL_SAT;
-        magicColorCycle = 2;
-        break;
-      case 2:
-        newHue = TAIL_HUE;
-        newSat = TAIL_SAT;
-        magicColorCycle = 3;
-        break;
-      case 3:
-      default:
-        newHue = LEGS_HUE;
-        newSat = LEGS_SAT;
-        magicColorCycle = 1;
+  int newHue;
+  int newSat;
+  switch(magicColorCycle) {
+    case 1:
+      newHue = ARIEL_HUE;
+      newSat = ARIEL_SAT;
+      magicColorCycle = 2;
       break;
-    }
+    case 2:
+      newHue = TAIL_HUE;
+      newSat = TAIL_SAT;
+      magicColorCycle = 3;
+      break;
+    case 3:
+    default:
+      newHue = LEGS_HUE;
+      newSat = LEGS_SAT;
+      magicColorCycle = 1;
+    break;
   }
 
   // Update each led in the current ring in each set.
@@ -396,38 +393,65 @@ void updateShaftLeds() {
   //     3 + LEDS_PER_RING*n
   //     ...
   // n == currentRingInSet + an offset for which set of rings we're updating.
-
-  // Uncomment all of the Serial.prints to get troubleshooting output to review
-  // what happens in a given loop.
-  // Serial.print("\n\nRing");
-  // Serial.println(currentRingInSet);
   for (int setIdx = 0; setIdx < NUM_RING_SETS; setIdx++) {
     for (int ledIdx = 0; ledIdx < LEDS_PER_RING; ledIdx++) {
       // We have LEDs snaking up and down, swap between the two with each
       // iteration using modulo. ledIdxDiv2 accounts for the numbering pattern
       // noted in the long comment above for snaking configuration.
-      int ledIdxDiv2 = ceil(ledIdx / 2);
-      int ledAddr = 0;
-      if (ledIdx % 2 == 0) {
-        // Even, ascending
-        ledAddr = (ledIdxDiv2)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + (currentRingInSet + setIdx*RINGS_PER_SET);
-      } else {
-        // Odd, descending
-        ledAddr = (ledIdxDiv2+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - (currentRingInSet + setIdx*RINGS_PER_SET) - 1;
-      }
-      // Serial.print("Asc: ");
-      // Serial.print(ascendingLedAddr);
-      // Serial.print(", Desc: ");
-      // Serial.print(descendingLedAddr);
+      int ledAddr = getLedAddrInRing(setIdx*RINGS_PER_SET, ledIdx);
       hsvs[ledAddr].val = topBright;
-      if(magicMode) {  // we change colors in this mode
-        hsvs[ledAddr].hue = newHue;
-        hsvs[ledAddr].sat = newSat;
-      }
+      hsvs[ledAddr].hue = newHue;
+      hsvs[ledAddr].sat = newSat;
     }
     // Serial.println();
   }
   priorChaseFrame = framecount;
+}
+
+/**
+ * @brief Get the Led Addr In Ring object
+ *
+ * @param ringIdx [0, NUM_RINGS) id for the ring, counting from the bottom of the shaft.
+ * @param ledIdxInRing [0, LEDS_PER_RING) Id for the led in the ring
+ * @return int Address of the led.
+ */
+int getLedAddrInRing(int ringIdx, int ledIdxInRing) {
+  // My LEDs are snaking (see end of file for illustrations), so addressing is a
+  // little more mathematically intensive. Each configuration I've considered is
+  // laid out below, with snaking actually implemented. Note that snaking LEDs
+  // assumes that LEDS_PER_RING is an even number.
+  //
+  // LED addresses for ring n in snaking configuration:
+  //     0*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING-1-n
+  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     2*2*NUM_SHAFT_LEDS/LEDS_PER_RING-1-n
+  //     ...
+  // LED addresses for ring n in climbing configuration:
+  //     0*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     2*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     3*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
+  //     ...
+  // LED addresses for ring n in wrapping configuration:
+  //     0 + LEDS_PER_RING*n
+  //     1 + LEDS_PER_RING*n
+  //     2 + LEDS_PER_RING*n
+  //     3 + LEDS_PER_RING*n
+  //     ...
+  // n == currentRingInSet + an offset for which set of rings we're updating.
+
+  // We have LEDs snaking up and down, swap between the two with each
+  // iteration using modulo. ledIdxDiv2 accounts for the numbering pattern
+  // noted in the long comment above for snaking configuration.
+  int ledIdxDiv2 = ceil(ledIdxInRing / 2);
+  if (ledIdxInRing % 2 == 0) {
+    // Even, ascending
+    return (ledIdxDiv2)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + (currentRingInSet + ringIdx);
+  } else {
+    // Odd, descending
+    return (ledIdxDiv2+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - (currentRingInSet + ringIdx) - 1;
+  }
 }
 
 /**
@@ -499,9 +523,12 @@ void twinkle(int firstLedAddr, int lastLedAddr, int skip_n_leds) {
   }
 }
 
-void attack() {
+void attackTinesFlash() {
   // Use piecewise cosines to fade in fast and fade out slower.
   unsigned long timeInAttack = millis() - attackStart;
+  // Wait until a second into the effect.
+  if (timeInAttack < 1000) return;
+  timeInAttack -= 1000;
   byte brightness;
   // cos8 is a 0-255 function, so Period = 1 means it'll start at peak at 0 ms
   // and peak again at 255 ms. To get a ~1 second effect, we need to stretch
@@ -521,8 +548,42 @@ void attack() {
     attackMode = 0;
   }
   for( int i = 0; i < (TINES_TOTAL); i++) {
-    hsvs[i+TINES_START].val = brightness;
+    hsvs[i+TINES_START_ADDR].val = brightness;
   }
+}
+
+void attackShaftChase() {
+
+  // Need a wave with n nodes traversing the length of the shaft, making
+  // physical space (i.e. ringIdx) a factor in the trig function - I believe
+  // it'll land in the offset.
+  unsigned long timeInAttack = millis() - attackStart;
+  for (int ringIdx = 0; ringIdx < NUM_RINGS; ringIdx++) {
+    for (int ledIdx = 0; ledIdx < LEDS_PER_RING; ledIdx++) {
+      int ledAddr = getLedAddrInRing(ringIdx, ledIdx);
+      // Period when frequency=1 is 255 ms. period = 4 --> freq = 1/4 --> ~1 s
+      // period.
+      uint8_t period = 8;
+      // Use a float for floating point math on the brightness.
+      float physicalOffset = map(ringIdx, 0, NUM_RINGS-1, 0, 255) * 0.5;
+      uint8_t scaled_time = (uint8_t) ((timeInAttack/period) - physicalOffset);
+      uint8_t brightness = cos8(scaled_time);
+
+      // Kill the first part of the rising edge to give more 'upward energy' to
+      // the chase.
+      if (brightness > hsvs[ledAddr].val && brightness < 253) {
+        brightness = 0;
+      }
+
+
+      if (timeInAttack - physicalOffset > 1000 && hsvs[ledAddr].val == 0) {
+        continue;
+      }
+
+      hsvs[ledAddr].val = brightness;
+    }
+  }
+  return;
 }
 
 // Snaking LEDs:
