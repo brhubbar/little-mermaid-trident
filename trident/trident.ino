@@ -62,9 +62,13 @@ int intensityCtrlFilterIndex = 0;
 
 const int NUM_LEDS = NUM_SHAFT_LEDS + NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS + 1; // 1 for mode indicator
 const int NUM_RING_SETS = NUM_SHAFT_LEDS / LEDS_PER_RING / RINGS_PER_SET;
+
+const int SHAFT_START_ADDR = 0;
+const int SHAFT_LAST_ADDR = NUM_SHAFT_LEDS - 1;
 const int MODE_LED_LOCATION = NUM_SHAFT_LEDS ;  // location starts at 0, mode led is between shaft and tines.
-const int TINES_START = MODE_LED_LOCATION + 1;
 const int TINES_TOTAL = NUM_TINE1_LEDS + NUM_TINE2_LEDS + NUM_TINE3_LEDS;
+const int TINES_START_ADDR = MODE_LED_LOCATION + 1;
+const int TINES_LAST_ADDR = TINES_START_ADDR + TINES_TOTAL;
 
 CHSV hsvs[NUM_LEDS];
 CRGB leds[NUM_LEDS];
@@ -148,10 +152,18 @@ void loop() {
   }
 
   pushIntensityCtrlValueToFilter(analogRead(INTENSITY_CTRL_PIN));
-  adjustPower(getAverageIntensityCtrlValue());
+  adjustTwinkleIntensity(getAverageIntensityCtrlValue());
 
-  updateShaftLeds();
-  updateTineLeds();
+  // shaftChase();
+  if (magicMode) {
+    magicShaftChase();
+    twinkle(TINES_START_ADDR, TINES_LAST_ADDR, 1);
+  } else if (attackMode) {
+    attack();
+  } else {
+    twinkle(TINES_START_ADDR, TINES_LAST_ADDR, 1);
+    twinkle(SHAFT_START_ADDR, SHAFT_LAST_ADDR, 1);
+  }
 
   // convert HSV settings into the leds array
   hsv2rgb_rainbow( hsvs, leds, NUM_LEDS);
@@ -228,44 +240,6 @@ int getAverageIntensityCtrlValue() {
   return sumVal/INTENSITY_CTRL_FILTER_LENGTH;
 }
 
-// Easing functions
-float cubicIn(float t) {
-  return t*t*t;
-}
-
-float cubicOut(float t) {
-  return 1-cubicIn(1-5);
-}
-
-/**
- * @brief Map a value to a cubic curve.
- *
- * @details
- *   - Clips `val` between `lowVal` and `highVal`.
- *   -
- *
- * @param val
- * @param lowVal
- * @param highVal
- * @param lowRange
- * @param highRange
- * @return int
- */
-int easeInOutMap(int val, int lowVal, int highVal, int lowRange, int highRange) {
-  int inRange = highVal - lowVal;
-  int outRange = highRange - lowRange;
-  val = max(val,lowVal);
-  val = min(val,highVal);
-  float t = (val-lowVal)/(inRange * 1.0);
-  float r;
-  if(t < 0.5) {
-    r = cubicIn(t*2.0)/2.0;
-  } else {
-    r = 1-cubicIn((1-t)*2)/2;
-  }
-  return (r * outRange) + lowRange;
-}
-
 void tritonMode() {
   Serial.println("triton");
   currentMode = TRITON_MODE;
@@ -299,6 +273,16 @@ void setHS(int hue, int sat, int pct, int start, int end) {
   }
 }
 
+// Fixing the duty cycle range helps keep power consumption in check. Varying
+// the frequency affects the intensity/francticness of the mood, so varying the
+// duty cycle as well would be turning two knobs to control the same effect, and
+// therefore counterproductive.
+const uint16_t twinkleDutyCycleMin = 2500;  // 2.5% of the time, the led is on.
+const uint16_t twinkleDutyCycleMax = 5000;  // 5% of the time, the led is on.
+const uint16_t twinkleBrightnessMin = 0;  // This knob is made available but I don't think its desireable.
+uint16_t twinkleBrightnessMax = 100;  // Brighter twinkling leads to a stronger mood.
+uint16_t twinkleFrequencyMin = 4000; // 2000;  // Range from 2000 to 6000 to yield maximum period of 30 to 11 seconds, respectively.
+uint16_t twinkleFrequencyMax = 24000; // 4000;  // Range from 4000 to 32000 to yield a minimum period of 16 to 2 seconds, respectively.
 
 int decay = 1;         // Rate at which leds dim each iteration of loop()
 int minBright = 0;     // we won't decay below this
@@ -313,26 +297,11 @@ int tineDecay = 3;     // tine decay rate
  *
  * @param intensity Setting provided by the fader to set twinkle intensity.
  */
-void adjustPower(int intensity) {
-  if(intensity > INTENSITY_CTRL_MIN_OUTPUT) {
-    decay = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 1, 15);
-    minBright = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 25, 80);
-    topBright = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 40, 255);
-    chaseRate = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 5, 20);
-    topTineBright = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 20, 150);
-    twinkleRate = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 0, 40);
-    tineProb = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 30, 200);
-    tineDecay = easeInOutMap(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 0, 3);
-  } else {
-    decay = 10;
-    minBright = 0;
-    topBright = 0;
-    chaseRate = 0;
-    topTineBright = 0;
-    twinkleRate = 0;
-    tineProb = 0;
-    tineDecay =  0;
-  }
+void adjustTwinkleIntensity(int intensity) {
+  // twinkleBrightnessMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 100, 250);
+  // twinkleFrequencyMin = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 2000, 6000);
+  // twinkleFrequencyMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 4000, 32000);
+
   if(magicMode) {
     chaseRate = 10;
     topBright = 190;
@@ -461,29 +430,72 @@ void updateShaftLeds() {
   priorChaseFrame = framecount;
 }
 
-void updateTineLeds() {
-  if (attackMode) {
-    attack();
-    return;
-  }
+/**
+ * @brief Apply a pseudo random twinkle to a range of leds. Twinkle behavior is
+ * deterministic for a constant range of leds.
+ *
+ * The knobs to turn are twinkleFrequencyMin, twinkleFrequencyMax,
+ * twinkleBrightnessMin, and twinkleBrightnessMax. Higher frequencies and higher
+ * brightnesses lead to a more intense mood.
+ *
+ * @param firstLedAddr LED to start at
+ * @param lastLedAddr Last LED to update
+ * @param skip_n_leds [0-n] Skip every so many LEDs to save on computation time.
+ */
+void twinkle(int firstLedAddr, int lastLedAddr, int skip_n_leds) {
+  // Inspired by
+  // https://gist.github.com/atuline/02e71a57636498d382e276311b328e53,
+  // twinklefox, etc.
+  //
+  // The idea is to use sine waves to fade the leds in and out. Each LED is
+  // assigned a pseudo-random frequency so they don't all turn on/off at the
+  // same time or rate. Using a wave plus a vertical offset makes it possible to
+  // clip so that ights have two states - fade in/out, or off, and the
+  // frequency of fade in/outs is controllable by adjusting the vertical offset.
+  // The time on vs off is referred to as duty cycle. Duty cycle can be
+  // approximated by vertically offsetting proportional to the range of the
+  // wave (e.g. 127 offset on a sin8 would give a 50% duty cycle.) To convert
+  // that into brightness values, we'll use the scale functions.
+  //
+  // LO INTENSITY: fade in/out period of 3-4 seconds; duty cycle 10-25% fading.
+  // HI INTENSITY: fade in/out period of 0.5-1 seconds; duty cycle 50-75% fading
 
-  // decay all
-  for (int i = 0; i < (TINES_TOTAL); i++) {
-    hsvs[i+TINES_START].val = max(hsvs[i+TINES_START].val - (5-tineDecay), 0);
-  }
+  // Setting the seed before using random() the same number of times in the same
+  // order ensures each LED gets the same set of 'random' numbers each time.
+  random16_set_seed(202);
+  unsigned long now = millis();
+  for (int i = firstLedAddr; i <= lastLedAddr; i += skip_n_leds + 1) {
+    if (i == MODE_LED_LOCATION) continue;  // skip the mode led.
+    // 16-bit sine with a period of 1 and operating in milliseconds has a 65535
+    // ms period, or ~65.5 seconds. A frequency of 2 --> ~33 seconds, frequency
+    // = 32 --> ~2 seconds.
+    float frequency = random16(twinkleFrequencyMin, twinkleFrequencyMax) / 1000.0;
+    // So they all start off offset from each other.
+    int phase_shift = random16();
+    // The sine is biased so that it ranges 0-65535 to make duty cycle math more
+    // readable.
+    uint16_t led_value = sin16((uint16_t)( (now - phase_shift)*frequency )) + 32767;
 
-  // twinkle
-  if(framecount > priorTwinkleFrame + FRAMES_PER_SECOND/twinkleRate) {
-    priorTwinkleFrame = framecount;
-    if(random8() < tineProb) {
-      hsvs[ TINES_START + random16(NUM_TINE1_LEDS) ].val = topTineBright;
+    // 100 * 1000 = 100% to allow a decent amount of variation coming from the
+    // random number generator.
+    //
+    // Duty cycle must be < 65.5% to fit within a uint16.
+    //
+    // I found that a duty cycle of 2.5-10% at low
+    // frequency leads to a nice calm pace, and keeping the same duty cycle at
+    // high frequencies leads to a more frantic mood and plenty of lights
+    // flashing on and off. Using random8 is faster, so I scale it up to
+    // 2550-10200.
+    float duty_cycle = (100000-(random16(twinkleDutyCycleMin, twinkleDutyCycleMax))) / 100000.0;
+    uint16_t threshold = (long)(duty_cycle * 65535);
+
+    byte brightness;
+    if (led_value < threshold) {
+      brightness = 0;
+    } else {
+      brightness = map(led_value, threshold, 65535, twinkleBrightnessMin, twinkleBrightnessMax);
     }
-    if(random8() < tineProb) {
-      hsvs[ TINES_START + NUM_TINE1_LEDS + random16(NUM_TINE2_LEDS) ].val = topTineBright;
-    }
-    if(random8() < tineProb) {
-      hsvs[ TINES_START + NUM_TINE1_LEDS + NUM_TINE2_LEDS + random16(NUM_TINE3_LEDS) ].val = topTineBright;
-    }
+    hsvs[i].val = brightness;
   }
 }
 
