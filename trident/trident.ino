@@ -91,7 +91,7 @@ int magicMode = 0;
 int magicColorCycle = 1;
 
 int attackMode = 0;
-int attackCounter = 0;
+unsigned long attackStart = 0;
 
 /**
  * @brief Fill the filter with zero values as a starting point.
@@ -343,7 +343,7 @@ void adjustPower(int intensity) {
 
 void startAttack() {
   attackMode = 1;
-  attackCounter = 0;
+  attackStart = millis();
 }
 
 void startMagic() {
@@ -462,47 +462,54 @@ void updateShaftLeds() {
 }
 
 void updateTineLeds() {
-  int ring;
+  if (attackMode) {
+    attack();
+    return;
+  }
 
-  if(attackMode) { // big flash of the tine LEDs
-    attackCounter += 1;
-    if(attackCounter > 50) { // off
-      attackMode = 0;
-      for( int i = 0; i < (TINES_TOTAL); i++) {
-        hsvs[i+TINES_START].val = 0;
-      }
-    } else if(attackCounter > 40) { // quick cooldown
-      for( int i = 0; i < (TINES_TOTAL); i++) {
-        hsvs[i+TINES_START].val = max(hsvs[i+TINES_START].val -20, 0);
-      }
-    } else if(attackCounter > 30) { // blast
-      for( int i = 0; i < (TINES_TOTAL); i++) {
-        hsvs[i+TINES_START].val = min(hsvs[i+TINES_START].val + 12, 255);
-      }
-    } else { // initial attack
-      for( int i = 0; i < (TINES_TOTAL); i++) {
-        hsvs[i+TINES_START].val = min(hsvs[i+TINES_START].val + 6, 255);
-      }
+  // decay all
+  for (int i = 0; i < (TINES_TOTAL); i++) {
+    hsvs[i+TINES_START].val = max(hsvs[i+TINES_START].val - (5-tineDecay), 0);
+  }
+
+  // twinkle
+  if(framecount > priorTwinkleFrame + FRAMES_PER_SECOND/twinkleRate) {
+    priorTwinkleFrame = framecount;
+    if(random8() < tineProb) {
+      hsvs[ TINES_START + random16(NUM_TINE1_LEDS) ].val = topTineBright;
     }
+    if(random8() < tineProb) {
+      hsvs[ TINES_START + NUM_TINE1_LEDS + random16(NUM_TINE2_LEDS) ].val = topTineBright;
+    }
+    if(random8() < tineProb) {
+      hsvs[ TINES_START + NUM_TINE1_LEDS + NUM_TINE2_LEDS + random16(NUM_TINE3_LEDS) ].val = topTineBright;
+    }
+  }
+}
+
+void attack() {
+  // Use piecewise cosines to fade in fast and fade out slower.
+  unsigned long timeInAttack = millis() - attackStart;
+  byte brightness;
+  // cos8 is a 0-255 function, so Period = 1 means it'll start at peak at 0 ms
+  // and peak again at 255 ms. To get a ~1 second effect, we need to stretch
+  // the period out to 4 times the original size. To position the peaks
+  // correctly, we use a time offset. cos((t - offset) / period).
+  if (timeInAttack < 255) {
+    // The period is 2, so the trough happens 255 ms into the curve.
+    // Subtracting 255 starts us there at t=0
+    brightness = cos8((timeInAttack - 255) / 2);
+  } else if (timeInAttack < 1020) {
+    // The cosine starts at its peak. It starts when t = 255 ms, so subtract
+    // that offset to start at the peak. A period of 6 means the wave troughs
+    // at 1020 seconds.
+    brightness = cos8((timeInAttack - 255) / 6);
   } else {
-    // decay all
-    for( int i = 0; i < (TINES_TOTAL); i++) {
-      hsvs[i+TINES_START].val = max(hsvs[i+TINES_START].val - (5-tineDecay), 0);
-    }
-
-    // twinkle
-    if(framecount > priorTwinkleFrame + FRAMES_PER_SECOND/twinkleRate) {
-      priorTwinkleFrame = framecount;
-      if(random8() < tineProb) {
-        hsvs[ TINES_START + random16(NUM_TINE1_LEDS) ].val = topTineBright;
-      }
-      if(random8() < tineProb) {
-        hsvs[ TINES_START + NUM_TINE1_LEDS + random16(NUM_TINE2_LEDS) ].val = topTineBright;
-      }
-      if(random8() < tineProb) {
-        hsvs[ TINES_START + NUM_TINE1_LEDS + NUM_TINE2_LEDS + random16(NUM_TINE3_LEDS) ].val = topTineBright;
-      }
-    }
+    brightness = 0;
+    attackMode = 0;
+  }
+  for( int i = 0; i < (TINES_TOTAL); i++) {
+    hsvs[i+TINES_START].val = brightness;
   }
 }
 
