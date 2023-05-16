@@ -82,33 +82,13 @@ byte prevModeButtonState = HIGH;
 // above. Probably something to do with the function pointers in the arg list.
 bool readButtonAndAct(byte buttonPin, bool previousState, void (*buttonPressCallback)(), void (*buttonReleaseCallback)());
 
-int framecount = 0;
-
-int chaseRate = 0;
-int priorChaseFrame = 0;     // previous frame at which we chased
-int currentRingInSet = 0;    // Within a set of rings, which one is flashing? (For a chase)
-int twinkleRate = 40;        // tine twinkling, bottom 4, top 40
-int priorTwinkleFrame = 0;   // previous frame at which we twinkled
-
 int currentMode = TRITON_MODE;
 
 int magicMode = 0;
-int magicColorCycle = 1;
 
 int attackMode = 0;
 unsigned long attackStart = 0;
 
-/**
- * @brief Fill the filter with zero values as a starting point.
- */
-void initializeIntensityCtrlFilter() {
-  intensityCtrlFilterIndex = 0;  // index to put latest reading into
-
-  // initialize the array itself
-  for(int i = 0; i < INTENSITY_CTRL_FILTER_LENGTH; i++) {
-    intensityCtrlFilter[i] = 0;
-  }
-}
 
 void setup() {
   delay( 2000 );  // power-up safety delay
@@ -142,15 +122,6 @@ void loop() {
   prevAttackButtonState = readButtonAndAct(ATTACK_BUTTON_PIN, prevAttackButtonState, &startAttack, &no_op);
   prevMagicButtonState = readButtonAndAct(MAGIC_BUTTON_PIN, prevMagicButtonState, &startMagic, &endMagic);
   prevModeButtonState = readButtonAndAct(MODE_BUTTON_PIN, prevModeButtonState, &ursulaMode, &tritonMode);
-
-  framecount += 1;
-
-  // reset framecount
-  if(framecount > FRAME_LIMIT) {
-    framecount -= FRAME_LIMIT;
-    priorChaseFrame -= FRAME_LIMIT;
-    priorTwinkleFrame -= FRAME_LIMIT;
-  }
 
   pushIntensityCtrlValueToFilter(analogRead(INTENSITY_CTRL_PIN));
   adjustTwinkleIntensity(getAverageIntensityCtrlValue());
@@ -209,6 +180,18 @@ bool readButtonAndAct(
 
 /// @brief No-operation for button callbacks.
 void no_op(){;}
+
+/**
+ * @brief Fill the filter with zero values as a starting point.
+ */
+void initializeIntensityCtrlFilter() {
+  intensityCtrlFilterIndex = 0;  // index to put latest reading into
+
+  // initialize the array itself
+  for(int i = 0; i < INTENSITY_CTRL_FILTER_LENGTH; i++) {
+    intensityCtrlFilter[i] = 0;
+  }
+}
 
 /**
  * @brief Put `reading` into a queue for filtering (averaging) readings from the
@@ -282,7 +265,7 @@ void setHS(int hue, int sat, int pct, int start, int end) {
 const uint16_t twinkleDutyCycleMin = 2500;  // 2.5% of the time, the led is on.
 const uint16_t twinkleDutyCycleMax = 5000;  // 5% of the time, the led is on.
 const uint16_t twinkleBrightnessMin = 0;  // This knob is made available but I don't think its desireable.
-uint16_t twinkleBrightnessMax = 100;  // Brighter twinkling leads to a stronger mood.
+uint16_t twinkleBrightnessMax = 1;  // Brighter twinkling leads to a stronger mood. Set to nonzero so map doesn't crash the program.
 // These have been fixed in time because I don't have time to work out the math
 // for phase-aligning each led as its frequency changes. The problem (brightness
 // is the 'signal') and its solution are captured beautifully on stack exchange:
@@ -290,30 +273,16 @@ uint16_t twinkleBrightnessMax = 100;  // Brighter twinkling leads to a stronger 
 const uint16_t twinkleFrequencyMin = 2000;  // Range from 2000 to 6000 to yield maximum period of 30 to 11 seconds, respectively.
 const uint16_t twinkleFrequencyMax = 4000;  // Range from 4000 to 32000 to yield a minimum period of 16 to 2 seconds, respectively.
 
-int decay = 1;         // Rate at which leds dim each iteration of loop()
-int minBright = 0;     // we won't decay below this
-int topBright = 100;   // we won't go any brighter on shaft
-int topTineBright = 0; // we won't go any brighter on tines
-int tineProb = 0;      // probability of tine lighting
-int tineDecay = 3;     // tine decay rate
-
 /**
  * @brief Adjust values based on current average fader value.
  *
  * @param intensity Setting provided by the fader to set twinkle intensity.
  */
 void adjustTwinkleIntensity(int intensity) {
-  twinkleBrightnessMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 0, 200);
+  twinkleBrightnessMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 1, 200);
   // Disabled; see note at the definition of these variables above.
   // twinkleFrequencyMin = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 2000, 6000);
   // twinkleFrequencyMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 4000, 32000);
-
-  if(magicMode) {
-    chaseRate = 10;
-    topBright = 190;
-    decay = 10;
-    minBright = 0;
-  }
 }
 
 void startAttack() {
@@ -323,7 +292,6 @@ void startAttack() {
 
 void startMagic() {
   magicMode = 1;
-  magicColorCycle = 0;
 }
 
 void endMagic() {
@@ -335,16 +303,28 @@ void endMagic() {
   }
 }
 
+const byte chase_period = 150;  // Time in milliseconds between each ring set lighting up in the magic chase.
+const byte topBright = 190;
+const byte decay = 10;
+const byte minBright = 0;
 void magicShaftChase() {
+  static unsigned long last_update = 0;
+  static byte magicColorCycle = 1;
+  static byte currentRingInSet = 0;
+
+  unsigned long now = millis();
+
   // decay all leds
   for( int i = 0; i < NUM_SHAFT_LEDS; i++) {
     hsvs[i].val = max(hsvs[i].val - decay, minBright);
   }
 
   // Stop if a chase 'frame' happened too recently.
-  if(framecount < (priorChaseFrame + FRAMES_PER_SECOND/chaseRate)) {
+  if(now - last_update < chase_period) {
     return;
   }
+  last_update = now;
+
   // Rings are grouped together into sets of four.
   currentRingInSet += 1;
   if(currentRingInSet >= RINGS_PER_SET) {
@@ -371,46 +351,17 @@ void magicShaftChase() {
       magicColorCycle = 1;
     break;
   }
-
-  // Update each led in the current ring in each set.
-  //
-  // My LEDs are snaking (see end of file for illustrations), so addressing is a
-  // little more mathematically intensive. Each configuration I've considered is
-  // laid out below, with snaking actually implemented. Note that snaking LEDs
-  // assumes that LEDS_PER_RING is an even number.
-  //
-  // LED addresses for ring n in snaking configuration:
-  //     0*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
-  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING-1-n
-  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
-  //     2*2*NUM_SHAFT_LEDS/LEDS_PER_RING-1-n
-  //     ...
-  // LED addresses for ring n in climbing configuration:
-  //     0*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
-  //     1*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
-  //     2*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
-  //     3*2*NUM_SHAFT_LEDS/LEDS_PER_RING+n
-  //     ...
-  // LED addresses for ring n in wrapping configuration:
-  //     0 + LEDS_PER_RING*n
-  //     1 + LEDS_PER_RING*n
-  //     2 + LEDS_PER_RING*n
-  //     3 + LEDS_PER_RING*n
-  //     ...
-  // n == currentRingInSet + an offset for which set of rings we're updating.
   for (int setIdx = 0; setIdx < NUM_RING_SETS; setIdx++) {
     for (int ledIdx = 0; ledIdx < LEDS_PER_RING; ledIdx++) {
       // We have LEDs snaking up and down, swap between the two with each
       // iteration using modulo. ledIdxDiv2 accounts for the numbering pattern
       // noted in the long comment above for snaking configuration.
-      int ledAddr = getLedAddrInRing(setIdx*RINGS_PER_SET, ledIdx);
+      int ledAddr = getLedAddrInRing(currentRingInSet + setIdx*RINGS_PER_SET, ledIdx);
       hsvs[ledAddr].val = topBright;
       hsvs[ledAddr].hue = newHue;
       hsvs[ledAddr].sat = newSat;
     }
-    // Serial.println();
   }
-  priorChaseFrame = framecount;
 }
 
 /**
@@ -452,10 +403,10 @@ int getLedAddrInRing(int ringIdx, int ledIdxInRing) {
   int ledIdxDiv2 = ceil(ledIdxInRing / 2);
   if (ledIdxInRing % 2 == 0) {
     // Even, ascending
-    return (ledIdxDiv2)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + (currentRingInSet + ringIdx);
+    return (ledIdxDiv2)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) + ringIdx;
   } else {
     // Odd, descending
-    return (ledIdxDiv2+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - (currentRingInSet + ringIdx) - 1;
+    return (ledIdxDiv2+1)*(2*NUM_SHAFT_LEDS/LEDS_PER_RING) - ringIdx - 1;
   }
 }
 
