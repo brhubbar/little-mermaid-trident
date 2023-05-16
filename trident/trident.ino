@@ -283,8 +283,12 @@ const uint16_t twinkleDutyCycleMin = 2500;  // 2.5% of the time, the led is on.
 const uint16_t twinkleDutyCycleMax = 5000;  // 5% of the time, the led is on.
 const uint16_t twinkleBrightnessMin = 0;  // This knob is made available but I don't think its desireable.
 uint16_t twinkleBrightnessMax = 100;  // Brighter twinkling leads to a stronger mood.
-uint16_t twinkleFrequencyMin = 4000; // 2000;  // Range from 2000 to 6000 to yield maximum period of 30 to 11 seconds, respectively.
-uint16_t twinkleFrequencyMax = 24000; // 4000;  // Range from 4000 to 32000 to yield a minimum period of 16 to 2 seconds, respectively.
+// These have been fixed in time because I don't have time to work out the math
+// for phase-aligning each led as its frequency changes. The problem (brightness
+// is the 'signal') and its solution are captured beautifully on stack exchange:
+// https://dsp.stackexchange.com/q/76284
+const uint16_t twinkleFrequencyMin = 2000;  // Range from 2000 to 6000 to yield maximum period of 30 to 11 seconds, respectively.
+const uint16_t twinkleFrequencyMax = 4000;  // Range from 4000 to 32000 to yield a minimum period of 16 to 2 seconds, respectively.
 
 int decay = 1;         // Rate at which leds dim each iteration of loop()
 int minBright = 0;     // we won't decay below this
@@ -299,7 +303,8 @@ int tineDecay = 3;     // tine decay rate
  * @param intensity Setting provided by the fader to set twinkle intensity.
  */
 void adjustTwinkleIntensity(int intensity) {
-  // twinkleBrightnessMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 100, 250);
+  twinkleBrightnessMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 0, 200);
+  // Disabled; see note at the definition of these variables above.
   // twinkleFrequencyMin = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 2000, 6000);
   // twinkleFrequencyMax = map(intensity, INTENSITY_CTRL_MIN_OUTPUT, INTENSITY_CTRL_MAX_OUTPUT, 4000, 32000);
 
@@ -526,7 +531,7 @@ void twinkle(int firstLedAddr, int lastLedAddr, int skip_n_leds) {
 void attackTinesFlash() {
   // Use piecewise cosines to fade in fast and fade out slower.
   unsigned long timeInAttack = millis() - attackStart;
-  // Wait until a second into the effect.
+  // Wait until a second into the effect; see attackShaftChase.
   if (timeInAttack < 1000) return;
   timeInAttack -= 1000;
   byte brightness;
@@ -561,10 +566,16 @@ void attackShaftChase() {
   for (int ringIdx = 0; ringIdx < NUM_RINGS; ringIdx++) {
     for (int ledIdx = 0; ledIdx < LEDS_PER_RING; ledIdx++) {
       int ledAddr = getLedAddrInRing(ringIdx, ledIdx);
-      // Period when frequency=1 is 255 ms. period = 4 --> freq = 1/4 --> ~1 s
-      // period.
+      // Period when frequency=1 is 255 ms. period = 8 --> freq = 1/8 --> ~2 s
+      // period. Combine that with a half cosine wave (physicalOffset computation
+      // does this, whether the math is right or not...), and we've got one big
+      // WA-BAM that hits the top right about 1 second into the effect and dies
+      // 1 second later (this couples with attackTinesFlash for timing..)
       uint8_t period = 8;
-      // Use a float for floating point math on the brightness.
+      // Phase shift the wave as a function of space so it starts at peak
+      // brightness at the base of the shaft, minimum brightness at the top, and
+      // the wave travels up the shaft. Use a float for floating point math on
+      // the brightness.
       float physicalOffset = map(ringIdx, 0, NUM_RINGS-1, 0, 255) * 0.5;
       uint8_t scaled_time = (uint8_t) ((timeInAttack/period) - physicalOffset);
       uint8_t brightness = cos8(scaled_time);
@@ -575,7 +586,8 @@ void attackShaftChase() {
         brightness = 0;
       }
 
-
+      // Do some hoakey math to make sure the chase doesn't start again back at
+      // the bottom.
       if (timeInAttack - physicalOffset > 1000 && hsvs[ledAddr].val == 0) {
         continue;
       }
